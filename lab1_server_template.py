@@ -1,8 +1,19 @@
 
 #------------------------------------Adham----------------------------------------#
+TERMINATING_DATA_LENGTH = 516
+TFTP_TRANSFER_MODE = b'netascii'
+TFTP_OPCODES = {
+    'unknown': 0,
+    'read': 1,  # RRQ
+    'write': 2,  # WRQ
+    'data': 3,  # DATA
+    'ack': 4,  # ACKNOWLEDGMENT
+    'error': 5}  # ERROR
+
 # Create a UDP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_address = ('localhost', 69)
+
 def send_rq(filename, mode):
     """
     This function constructs the request packet in the format below.
@@ -82,11 +93,11 @@ def send_ack(ack_data, server):
     sock.sendto(ack, server)
 
 const (
-    OP_RRQ   = uint16(1) // Read request (RRQ)
-    OP_WRQ   = uint16(2) // Write request (WRQ)
-    OP_DATA  = uint16(3) // Data
-    OP_ACK   = uint16(4) // Acknowledgement
-    OP_ERROR = uint16(5) // Error
+    OP_RRQ   = uint16(1) #// Read request (RRQ)
+    OP_WRQ   = uint16(2) #// Write request (WRQ)
+    OP_DATA  = uint16(3) #// Data
+    OP_ACK   = uint16(4) #// Acknowledgement
+    OP_ERROR = uint16(5) #// Error
 )
 
 def server_error(data):
