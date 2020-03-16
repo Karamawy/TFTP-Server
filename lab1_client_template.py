@@ -2,8 +2,9 @@
 import sys
 import os
 import enum
-
-
+import socket
+import struct
+from struct import pack
 class TftpProcessor(object):
     """
     Implements logic for a TFTP client.
@@ -36,6 +37,11 @@ class TftpProcessor(object):
         modify the existing values as necessary.
         """
         RRQ = 1
+        WRQ = 2
+        DATA = 3
+        ACK = 4
+        ERROR = 5
+
 
     def __init__(self):
         """
@@ -69,12 +75,34 @@ class TftpProcessor(object):
         the type of the packet and extract other available
         information.
         """
-        pass
+        in_packet=[]
+        print(packet_bytes)
+        opcode = packet_bytes[0:2]
+        opcode=int.from_bytes(opcode,'big')
+        print(opcode)
+        in_packet.append(opcode)
+        #length = packet_bytes.find(b'\0', start=2)
+        if opcode==self.TftpPacketType.ACK.value:
+            return in_packet
+        elif opcode==self.TftpPacketType.DATA.value:
+            pass
+        elif opcode==self.TftpPacketType.ERROR.value:
+            pass
+        return in_packet
+
+        
 
     def _do_some_logic(self, input_packet):
         """
         Example of a private function that does some logic.
         """
+        opcode=input_packet[0]
+        if opcode==self.TftpPacketType.ACK.value:
+            pass
+        elif opcode==self.TftpPacketType.DATA.value:
+            pass
+        elif opcode==self.TftpPacketType.ERROR.value:
+            pass
         pass
 
     def get_next_output_packet(self):
@@ -105,8 +133,17 @@ class TftpProcessor(object):
         a file to/from a server, one of the inputs the client
         accept is the file name. Remove this function if you're
         implementing a server.
+        Type   Op #     Format without header
+               2 bytes    string   1 byte     string   1 byte
+               -----------------------------------------------
+        RRQ/  | 01/02 |  Filename  |   0  |    Mode    |   0  |
+        WRQ    -----------------------------------------------
         """
-        pass
+        formatstring="!H{}sB8sB" #
+        formatstring = formatstring.format(len(file_path_on_server))
+        opcode = self.TftpPacketType.RRQ.value
+        RRQ = pack(formatstring,opcode,file_path_on_server.encode(),0,"netascii".encode(),0)
+        return RRQ
 
     def upload_file(self, file_path_on_server):
         """
@@ -135,17 +172,9 @@ def setup_sockets(address):
 
     Feel free to delete this function.
     """
-    pass
-
-
-def do_socket_logic():
-    """
-    Example function for some helper logic, in case you
-    want to be tidy and avoid stuffing the main function.
-
-    Feel free to delete this function.
-    """
-    pass
+    skt=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+    skt.bind((address,69)) 
+    return skt
 
 
 def parse_user_input(address, operation, file_name=None):
@@ -155,11 +184,24 @@ def parse_user_input(address, operation, file_name=None):
     # But don't add socket code in the TftpProcessor class.
     # Feel free to delete this code as long as the
     # functionality is preserved.
+    skt=setup_sockets(address)
+    processor = TftpProcessor()
     if operation == "push":
         print(f"Attempting to upload [{file_name}]...")
+        processor.upload_file(file_name)
+        
+        
+        
+        
         pass
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
+        RRQ=processor.request_file(file_name) 
+        skt.sendto(RRQ,(address,69)) #SENDING THE RRQ
+        file = open(file_name,"wb") #open file to write the date in 
+        while True:
+            data,server = skt.recvfrom(516)
+            processor.process_udp_packet(data,server)
         pass
 
 
@@ -190,7 +232,7 @@ def main():
     """
     print("*" * 50)
     print("[LOG] Printing command line arguments\n", ",".join(sys.argv))
-    check_file_name()
+    #check_file_name()
     print("*" * 50)
 
     # This argument is required.
@@ -201,7 +243,6 @@ def main():
     ip_address = get_arg(1, "127.0.0.1")
     operation = get_arg(2, "pull")
     file_name = get_arg(3, "test.txt")
-
     # Modify this as needed.
     parse_user_input(ip_address, operation, file_name)
 
