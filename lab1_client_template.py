@@ -30,7 +30,6 @@ class TftpProcessor(object):
     think they are "private" only. Private functions in Python
     start with an "_", check the example below
     """
-
     class TftpPacketType(enum.Enum):
         """
         Represents a TFTP packet type add the missing types here and
@@ -51,6 +50,8 @@ class TftpProcessor(object):
         Here's an example of what you can do inside this function.
         """
         self.packet_buffer = []
+        self._oldpacket= None
+        self._file= None
         pass
 
     def process_udp_packet(self, packet_data, packet_source):
@@ -65,7 +66,7 @@ class TftpProcessor(object):
         print(f"Received a packet from {packet_source}")
         in_packet = self._parse_udp_packet(packet_data)
         out_packet = self._do_some_logic(in_packet)
-
+        self._oldpacket=out_packet
         # This shouldn't change.
         self.packet_buffer.append(out_packet)
 
@@ -83,13 +84,18 @@ class TftpProcessor(object):
         in_packet.append(opcode)
         #length = packet_bytes.find(b'\0', start=2)
         if opcode==self.TftpPacketType.ACK.value:
-            return in_packet
+            blocknum=packet_bytes[2:4]
+            blocknum=int.from_bytes(blocknum,'big')
+            in_packet.append(blocknum)
         elif opcode==self.TftpPacketType.DATA.value:
-            pass
+            blocknum=packet_bytes[2:4]
+            blocknum=int.from_bytes(blocknum,'big')
+            in_packet.append(blocknum)
+            data=packet_bytes[4:]
+            in_packet.append(data)
         elif opcode==self.TftpPacketType.ERROR.value:
             pass
         return in_packet
-
         
 
     def _do_some_logic(self, input_packet):
@@ -98,11 +104,11 @@ class TftpProcessor(object):
         """
         opcode=input_packet[0]
         if opcode==self.TftpPacketType.ACK.value:
-            pass
+            return self._continue_sending(input_packet[1])
         elif opcode==self.TftpPacketType.DATA.value:
-            pass
+            return self._continue_reading(input_packet)
         elif opcode==self.TftpPacketType.ERROR.value:
-            pass
+            return self._oldpacket
         pass
 
     def get_next_output_packet(self):
@@ -126,6 +132,22 @@ class TftpProcessor(object):
         """
         return len(self.packet_buffer) != 0
 
+    def send_ack(self,blocknum):
+         request = '!HH'
+         request = pack(request,self.TftpPacketType.ACK.value,blocknum)
+         return request
+
+    def _continue_reading(self,input_packet):
+        self.file.write(input_packet[2])
+        return self.send_ack(input_packet[1])
+
+    def _continue_sending(self,blocknum):
+        bytes_to_be_sent=self.file.read()
+        request='!HH{}s'
+        request = request.format(request,len(bytes_to_be_sent))
+        request = pack(request,self.TftpPacketType.DATA,blocknum+1,bytes_to_be_sent.encode())
+        return request
+
     def request_file(self, file_path_on_server):
         """
         This method is only valid if you're implementing
@@ -139,6 +161,7 @@ class TftpProcessor(object):
         RRQ/  | 01/02 |  Filename  |   0  |    Mode    |   0  |
         WRQ    -----------------------------------------------
         """
+        self.file=open(file_path_on_server,"wb")
         formatstring="!H{}sB8sB" #
         formatstring = formatstring.format(len(file_path_on_server))
         opcode = self.TftpPacketType.RRQ.value
@@ -153,7 +176,12 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        pass
+        self.file=open(file_path_on_server,'rb',512)
+        formatstring="!H{}sB8sB" #
+        formatstring = formatstring.format(len(file_path_on_server))
+        opcode = self.TftpPacketType.WRQ.value
+        WRQ = pack(formatstring,opcode,file_path_on_server.encode(),0,"netascii".encode(),0)
+        return WRQ
 
 
 def check_file_name():
@@ -173,7 +201,7 @@ def setup_sockets(address):
     Feel free to delete this function.
     """
     skt=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-    skt.bind((address,69)) 
+    skt.bind((address,69))
     return skt
 
 
@@ -189,19 +217,21 @@ def parse_user_input(address, operation, file_name=None):
     if operation == "push":
         print(f"Attempting to upload [{file_name}]...")
         processor.upload_file(file_name)
-        
-        
-        
-        
+        WRQ=processor.upload_file(file_name)
+        skt.sendto(WRQ,(address,69))
+        while processor.has_pending_packets_to_be_sent():
+            data,server = skt.recvfrom(516)
+            processor.process_udp_packet(data,server)
+            skt.sendto(processor.get_next_output_packet(),(address,69))
         pass
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
         RRQ=processor.request_file(file_name) 
         skt.sendto(RRQ,(address,69)) #SENDING THE RRQ
-        file = open(file_name,"wb") #open file to write the date in 
         while True:
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
+            skt.sendto(processor.get_next_output_packet(),(address,69))
         pass
 
 
