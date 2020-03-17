@@ -4,7 +4,10 @@ import os
 import enum
 import socket
 import struct
+import random
+
 from struct import pack
+done = False
 class TftpProcessor(object):
     """
     Implements logic for a TFTP client.
@@ -142,7 +145,9 @@ class TftpProcessor(object):
         return self.send_ack(input_packet[1])
 
     def _continue_sending(self,blocknum):
-        bytes_to_be_sent=self.file.read()
+        bytes_to_be_sent=self.file.read(512)
+        if sys.getsizeof(bytes_to_be_sent)<512:
+            done=True
         request='!HH{}s'
         request = request.format(request,len(bytes_to_be_sent))
         request = pack(request,self.TftpPacketType.DATA,blocknum+1,bytes_to_be_sent.encode())
@@ -176,7 +181,7 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        self.file=open(file_path_on_server,'rb',512)
+        self.file=open(file_path_on_server,'rb')
         formatstring="!H{}sB8sB" #
         formatstring = formatstring.format(len(file_path_on_server))
         opcode = self.TftpPacketType.WRQ.value
@@ -201,7 +206,6 @@ def setup_sockets(address):
     Feel free to delete this function.
     """
     skt=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-    skt.bind((address,69))
     return skt
 
 
@@ -219,11 +223,12 @@ def parse_user_input(address, operation, file_name=None):
         processor.upload_file(file_name)
         WRQ=processor.upload_file(file_name)
         skt.sendto(WRQ,(address,69))
-        while processor.has_pending_packets_to_be_sent():
+        while True:
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
             skt.sendto(processor.get_next_output_packet(),(address,69))
-        pass
+            if done == True:
+                break
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
         RRQ=processor.request_file(file_name) 
@@ -232,6 +237,8 @@ def parse_user_input(address, operation, file_name=None):
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
             skt.sendto(processor.get_next_output_packet(),(address,69))
+            if sys.getsizeof(data[4:])<512:
+                break
         pass
 
 
