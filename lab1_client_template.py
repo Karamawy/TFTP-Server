@@ -5,9 +5,8 @@ import enum
 import socket
 import struct
 import random
-
 from struct import pack
-done = False
+
 class TftpProcessor(object):
     """
     Implements logic for a TFTP client.
@@ -55,7 +54,9 @@ class TftpProcessor(object):
         self.packet_buffer = []
         self._oldpacket= None
         self._file= None
+        self._doneuploading = False
         pass
+    
 
     def process_udp_packet(self, packet_data, packet_source):
         """
@@ -146,11 +147,13 @@ class TftpProcessor(object):
 
     def _continue_sending(self,blocknum):
         bytes_to_be_sent=self.file.read(512)
-        if sys.getsizeof(bytes_to_be_sent)<512:
-            done=True
-        request='!HH{}s'
-        request = request.format(request,len(bytes_to_be_sent))
-        request = pack(request,self.TftpPacketType.DATA,blocknum+1,bytes_to_be_sent.encode())
+        if len(bytes_to_be_sent)<512:
+            self._doneuploading=True
+        print(bytes_to_be_sent)
+        request='!hh{}s'
+        request = request.format(len(bytes_to_be_sent))
+        request = pack(request,self.TftpPacketType.DATA.value,blocknum+1,bytes_to_be_sent)
+        #struct.pack('!hh' + str(len(data)) + 's', 3, chunkNo, data)
         return request
 
     def request_file(self, file_path_on_server):
@@ -187,6 +190,8 @@ class TftpProcessor(object):
         opcode = self.TftpPacketType.WRQ.value
         WRQ = pack(formatstring,opcode,file_path_on_server.encode(),0,"netascii".encode(),0)
         return WRQ
+    def getDoneuploading(self):
+        return self._doneuploading
 
 
 def check_file_name():
@@ -227,7 +232,7 @@ def parse_user_input(address, operation, file_name=None):
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
             skt.sendto(processor.get_next_output_packet(),(address,69))
-            if done == True:
+            if processor.getDoneuploading() == True:
                 break
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
@@ -278,8 +283,8 @@ def main():
     # The IP of the server, some default values
     # are provided. Feel free to modify them.
     ip_address = get_arg(1, "127.0.0.1")
-    operation = get_arg(2, "pull")
-    file_name = get_arg(3, "test.txt")
+    operation = get_arg(2, "push")
+    file_name = get_arg(3, "kisho.txt")
     # Modify this as needed.
     parse_user_input(ip_address, operation, file_name)
 
