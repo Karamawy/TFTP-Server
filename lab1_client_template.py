@@ -81,10 +81,10 @@ class TftpProcessor(object):
         information.
         """
         in_packet=[]
-        print(packet_bytes)
+        #print(packet_bytes)
         opcode = packet_bytes[0:2]
         opcode=int.from_bytes(opcode,'big')
-        print(opcode)
+        #print(opcode)
         in_packet.append(opcode)
         #length = packet_bytes.find(b'\0', start=2)
         if opcode==self.TftpPacketType.ACK.value:
@@ -149,7 +149,7 @@ class TftpProcessor(object):
         bytes_to_be_sent=self.file.read(512)
         if len(bytes_to_be_sent)<512:
             self._doneuploading=True
-        print(bytes_to_be_sent)
+        #print(bytes_to_be_sent)
         request='!hh{}s'
         request = request.format(len(bytes_to_be_sent))
         request = pack(request,self.TftpPacketType.DATA.value,blocknum+1,bytes_to_be_sent)
@@ -163,11 +163,6 @@ class TftpProcessor(object):
         a file to/from a server, one of the inputs the client
         accept is the file name. Remove this function if you're
         implementing a server.
-        Type   Op #     Format without header
-               2 bytes    string   1 byte     string   1 byte
-               -----------------------------------------------
-        RRQ/  | 01/02 |  Filename  |   0  |    Mode    |   0  |
-        WRQ    -----------------------------------------------
         """
         self.file=open(file_path_on_server,"wb")
         formatstring="!H{}sB8sB" #
@@ -231,9 +226,10 @@ def parse_user_input(address, operation, file_name=None):
         while True:
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
-            skt.sendto(processor.get_next_output_packet(),(address,69))
+            skt.sendto(processor.get_next_output_packet(),server)
             if processor.getDoneuploading() == True:
                 break
+        print("Done Uploading!")
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
         RRQ=processor.request_file(file_name) 
@@ -241,9 +237,10 @@ def parse_user_input(address, operation, file_name=None):
         while True:
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
-            skt.sendto(processor.get_next_output_packet(),(address,69))
+            skt.sendto(processor.get_next_output_packet(),server)
             if sys.getsizeof(data[4:])<512:
                 break
+        print("Done Downloading!")
         pass
 
 
