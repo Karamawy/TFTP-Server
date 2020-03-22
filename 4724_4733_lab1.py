@@ -98,7 +98,9 @@ class TftpProcessor(object):
             data=packet_bytes[4:]
             in_packet.append(data)
         elif opcode==self.TftpPacketType.ERROR.value:
-            pass
+            errorcode=packet_bytes[2:4]
+            errorcode=int.from_bytes(errorcode,'big')
+            in_packet.append(errorcode)
         return in_packet
         
 
@@ -112,7 +114,11 @@ class TftpProcessor(object):
         elif opcode==self.TftpPacketType.DATA.value:
             return self._continue_reading(input_packet)
         elif opcode==self.TftpPacketType.ERROR.value:
-            return self._oldpacket
+            if(input_packet[1]==1):
+                print("File not found in server")
+                exit(0)
+            else:
+                return self._oldpacket    
         pass
 
     def get_next_output_packet(self):
@@ -136,24 +142,23 @@ class TftpProcessor(object):
         """
         return len(self.packet_buffer) != 0
 
-    def send_ack(self,blocknum):
+    def _send_ack(self,blocknum):
          request = '!HH'
          request = pack(request,self.TftpPacketType.ACK.value,blocknum)
          return request
 
     def _continue_reading(self,input_packet):
-        self.file.write(input_packet[2])
-        return self.send_ack(input_packet[1])
+        self._file.write(input_packet[2])
+        return self._send_ack(input_packet[1])
 
     def _continue_sending(self,blocknum):
-        bytes_to_be_sent=self.file.read(512)
+        bytes_to_be_sent=self._file.read(512)
         if len(bytes_to_be_sent)<512:
             self._doneuploading=True
         #print(bytes_to_be_sent)
         request='!hh{}s'
         request = request.format(len(bytes_to_be_sent))
         request = pack(request,self.TftpPacketType.DATA.value,blocknum+1,bytes_to_be_sent)
-        #struct.pack('!hh' + str(len(data)) + 's', 3, chunkNo, data)
         return request
 
     def request_file(self, file_path_on_server):
@@ -164,7 +169,7 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        self.file=open(file_path_on_server,"wb")
+        self._file=open(file_path_on_server,"wb")
         formatstring="!H{}sB8sB" #
         formatstring = formatstring.format(len(file_path_on_server))
         opcode = self.TftpPacketType.RRQ.value
@@ -179,14 +184,19 @@ class TftpProcessor(object):
         accept is the file name. Remove this function if you're
         implementing a server.
         """
-        self.file=open(file_path_on_server,'rb')
+       
+        self._file=open(file_path_on_server,'rb')
         formatstring="!H{}sB8sB" #
         formatstring = formatstring.format(len(file_path_on_server))
         opcode = self.TftpPacketType.WRQ.value
         WRQ = pack(formatstring,opcode,file_path_on_server.encode(),0,"netascii".encode(),0)
         return WRQ
+
     def getDoneuploading(self):
         return self._doneuploading
+    def closeFile(self):
+        self._file.close()
+        pass
 
 
 def check_file_name():
@@ -206,6 +216,7 @@ def setup_sockets(address):
     Feel free to delete this function.
     """
     skt=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+    #skt.settimeout(1)
     return skt
 
 
@@ -229,6 +240,7 @@ def parse_user_input(address, operation, file_name=None):
             skt.sendto(processor.get_next_output_packet(),server)
             if processor.getDoneuploading() == True:
                 break
+        processor.closeFile()
         print("Done Uploading!")
     elif operation == "pull":
         print(f"Attempting to download [{file_name}]...")
@@ -238,8 +250,9 @@ def parse_user_input(address, operation, file_name=None):
             data,server = skt.recvfrom(516)
             processor.process_udp_packet(data,server)
             skt.sendto(processor.get_next_output_packet(),server)
-            if sys.getsizeof(data[4:])<512:
+            if len(data[4:])<512:
                 break
+        processor.closeFile()
         print("Done Downloading!")
         pass
 
@@ -271,7 +284,7 @@ def main():
     """
     print("*" * 50)
     print("[LOG] Printing command line arguments\n", ",".join(sys.argv))
-    #check_file_name()
+    check_file_name()
     print("*" * 50)
 
     # This argument is required.
@@ -280,7 +293,7 @@ def main():
     # The IP of the server, some default values
     # are provided. Feel free to modify them.
     ip_address = get_arg(1, "127.0.0.1")
-    operation = get_arg(2, "push")
+    operation = get_arg(2, "pull")
     file_name = get_arg(3, "kisho.txt")
     # Modify this as needed.
     parse_user_input(ip_address, operation, file_name)
